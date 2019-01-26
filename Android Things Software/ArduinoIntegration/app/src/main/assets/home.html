@@ -1,0 +1,52 @@
+<html>
+  <head>
+      <title>RGB LED Strip controller</title>
+
+      <script>
+          function setValue(val) {
+            var f1 = document.getElementById("f1");
+            var act = document.getElementById("action");
+            act.value = val;
+            f1.submit();
+          }
+      </script>
+  </head>
+  <body>
+    <center><h2>RGB LED Strip controller</h2></center>
+
+    <form id="f1">
+        <input type="hidden" name="action" id="action"/>
+        <table>
+            <tr>
+                <td>Red</td><td><input name="red" value="0"/></td>
+            </tr>
+            <tr>
+                <td>Green</td><td><input name="green" value="0"/></td>
+            </tr>
+            <tr>
+                <td>Blue</td><td><input name="blue" value="0"/></td>
+            </tr>
+            <tr>
+                <td>Delay (ms)</td><td><input name="delay" value="10"/></td>
+            </tr>
+            <tr>
+                <td>Direction</td>
+                <td>
+                    <select name="dir">
+                        <option name="Forward" value="1">Forward</option>
+                        <option name="Backward" value="2">Backward</option>
+                   </select>
+                </td>
+            </tr>
+            <tr>
+                <td colspan="2">
+                    <input type="button" value="Go" onclick="setValue(0)" />
+                    <input type="button" value="Clear" onclick="setValue(1)" />
+                    <input type="button" value="Rainbow" onclick="setValue(2)" />
+                </td>
+            </tr>
+        </table>
+
+    </form>
+  </body>
+</html>

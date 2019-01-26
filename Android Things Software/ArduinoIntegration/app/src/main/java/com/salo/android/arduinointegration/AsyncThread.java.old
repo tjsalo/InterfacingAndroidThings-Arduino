@@ -1,0 +1,243 @@
+/* AsyncThread - a thread that receives temperature sensor data from an
+ * Arduino board over an async interface.
+ *
+ * Copyright (C) Timothy J. Salo, 2018
+ */
+
+package com.salo.android.arduinointegration;
+
+import android.os.Looper;
+import android.os.MessageQueue;
+import android.util.Log;
+
+import com.google.android.things.pio.PeripheralManager;
+import com.google.android.things.pio.UartDevice;
+import com.google.android.things.pio.UartDeviceCallback;
+
+import java.io.IOException;
+import java.io.UnsupportedEncodingException;
+import java.lang.Runnable;
+import java.nio.charset.StandardCharsets;
+import java.util.List;
+
+import static java.lang.Thread.sleep;
+
+
+
+public class AsyncThread implements Runnable {
+
+    MainActivity activity;              // the Activity
+
+    private String mAsyncDevice;        // name of async device to use
+
+    private UartDevice mDevice;         // UART device
+
+    private int sequence = 0;          // sequence number for mDevice1
+
+    private static final String TAG = AsyncThread.class.getSimpleName();
+
+
+    /* AsyncThread()
+     */
+
+    AsyncThread (MainActivity activity, String device)
+    {
+        this.activity = activity;
+        mAsyncDevice = device;
+    }
+
+
+    /* run()
+     */
+
+    public void run() {
+
+        Log.d(TAG, "AsychThread: run()");
+
+        /* Look for an async device. */
+
+        PeripheralManager manager = PeripheralManager.getInstance();
+        List<String> deviceList = manager.getUartDeviceList();
+        if (deviceList.isEmpty()) {
+            Log.i(TAG, "No UART port available on this device.");
+        } else {
+            Log.i(TAG, "List of available devices: " + deviceList);
+        }
+
+        /* Try to access USB TTL serial dongle UART device. */
+
+        try {
+            mDevice = manager.openUartDevice(mAsyncDevice);
+            Log.d(TAG, "Acquired UART Device " + mAsyncDevice);
+        } catch (IOException e) {
+            Log.w(TAG, "Unable to access UART device " + mAsyncDevice, e);
+            return;                     // give up
+        }
+
+        /* Try to configure USB serial TTL dongle UART device. */
+
+        if (mDevice != null) {
+            try {
+                mDevice.setBaudrate(57600);
+                mDevice.setDataSize(8);
+                mDevice.setParity(UartDevice.PARITY_NONE);
+                mDevice.setStopBits(1);
+                mDevice.setHardwareFlowControl(UartDevice.HW_FLOW_CONTROL_NONE);
+            } catch (IOException e) {
+                e.printStackTrace();
+            }
+        }
+
+        /* Poke MainActivity. */
+
+        activity.setAsyncTemp(-2.0);
+
+        /* Register UartDeviceCallbacks. */
+
+        UartDeviceCallback mUartCallback1 = new UartDeviceCallback() {
+            @Override
+            public boolean onUartDeviceDataAvailable(UartDevice uart) {
+                // Read available data from the UART device
+                try {
+                    readUartBuffer(uart);
+                } catch (IOException e) {
+                    Log.w(TAG, "Unable to access UART device", e);
+                }
+
+                // Continue listening for more interrupts
+                return true;
+            }
+
+            @Override
+            public void onUartDeviceError(UartDevice uart, int error) {
+                Log.w(TAG, uart + ": Error event " + error);
+            }
+        };
+
+        UartDeviceCallback mUartCallback = new UartDeviceCallback() {
+            @Override
+            public boolean onUartDeviceDataAvailable(UartDevice uart) {
+                // Read available data from the UART device
+                try {
+                    readUartBuffer(uart);
+                } catch (IOException e) {
+                    Log.w(TAG, "Unable to access UART device", e);
+                }
+
+                // Continue listening for more interrupts
+                return true;
+            }
+
+            @Override
+            public void onUartDeviceError(UartDevice uart, int error) {
+                Log.w(TAG, uart + ": Error event " + error);
+            }
+        };
+
+        Looper.prepare();               // get a Looper for this Thread
+
+        Log.d(TAG, "myLooper: " + Looper.myLooper());
+        Log.d(TAG, "mainLooper: " + Looper.getMainLooper());
+
+        // Register Queue listener hook
+        MessageQueue queue = Looper.myQueue();
+        queue.addIdleHandler(new MessageQueue.IdleHandler() {
+            int mReqCount = 0;
+
+            @Override
+            public boolean queueIdle() {
+                Log.d(TAG, "queueIdle()");
+                if (++mReqCount == 2) {
+                    // Quit looper
+                    Looper.myLooper().quit();
+                    return false;
+                } else
+                    return true;
+            }
+        });
+
+        try {
+            mDevice.registerUartDeviceCallback(mUartCallback);
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+
+        Looper.loop();
+
+        /* Start sending "hello" messages. */
+
+        String hello = "hello\r\n";
+        int count;
+        byte [] b1;
+
+        while (true) {
+            try {
+                String helloSequence1 = String.format("hello: %05d\r\n", sequence++);
+                b1 = helloSequence1.getBytes("UTF-8");
+                count = mDevice.write(b1, b1.length);
+            } catch (UnsupportedEncodingException e) {
+                e.printStackTrace();
+            } catch (IOException e) {
+                e.fillInStackTrace();
+            }
+            try {
+                sleep(5000);
+            } catch (InterruptedException e) {
+                e.printStackTrace();
+            }
+        }
+
+
+
+
+        /* Clean up on termination. */
+
+//        if (mDevice1 != null) {
+//            try {
+//                mDevice1.close();
+//                mDevice1 = null;
+//            } catch (IOException e) {
+//                Log.w(TAG, "Unable to close UART device", e);
+//            }
+//        }
+
+    }
+
+    public void readUartBuffer(UartDevice uart) throws IOException {
+
+        final int maxCount = 50;        // max data to read at once
+        byte[] buffer = new byte[maxCount];    // data buffer
+        double temp = 0.0;              // temp read over async interface
+
+        int count;
+        while ((count = uart.read(buffer, buffer.length)) > 0) {
+            String string = new String(buffer, 0, count, StandardCharsets.UTF_8);
+            String tokens[] = string.split("[ ]+");
+//            for (int i = 0; i < tokens.length; i++) {
+//                Log.d(TAG, "token: " + tokens[i]);
+//            }
+            if (tokens.length >= 2) {
+
+                /* Process "temp: <temp>" command. */
+
+                if (tokens[0].equalsIgnoreCase("temp:")) {
+                    try
+                    {
+                        temp = Double.valueOf(tokens[1]).floatValue();
+                        activity.setAsyncTemp(temp);
+                    }
+                    catch (NumberFormatException nfe)
+                    {
+                        activity.setAsyncTemp(-3.0);
+                    }
+                }
+            }
+            Log.d(TAG, "Read: " + string + ", temp: " + Double.toString(temp));
+
+        }
+    }
+
+
+}
+
+
